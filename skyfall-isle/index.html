@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skyfall Isle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&family=Nunito:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --sun:#ffb54a; --sun-d:#d9741f; --sun-glow:rgba(255,181,74,.55);
+  --moon:#8fdcff; --moon-d:#3b86d1; --moon-glow:rgba(143,220,255,.55);
+  --ink:#1f1a3d; --paper:#fff8ec; --magic:#c99bff;
+  --tile: min(15.5vw, 96px);
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  font-family:Nunito,system-ui,sans-serif; color:var(--paper);
+  background:linear-gradient(180deg,#1c1846 0%,#3d3283 32%,#8a5aa6 62%,#e79a8f 85%,#ffd39b 100%) fixed;
+  overflow-x:hidden; min-height:100vh;
+}
+/* ---------- sky ---------- */
+.sky{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:0}
+.star{position:absolute;width:2px;height:2px;background:#fff;border-radius:50%;opacity:.7;animation:twinkle 3s ease-in-out infinite}
+@keyframes twinkle{50%{opacity:.15}}
+.cloud{position:absolute;height:60px;border-radius:60px;background:rgba(255,255,255,.18);filter:blur(2px);animation:drift linear infinite}
+.cloud::before,.cloud::after{content:"";position:absolute;background:inherit;border-radius:50%}
+.cloud::before{width:55%;height:150%;left:15%;top:-60%}
+.cloud::after{width:40%;height:120%;right:12%;top:-40%}
+@keyframes drift{from{transform:translateX(-30vw)}to{transform:translateX(130vw)}}
+
+/* ---------- layout ---------- */
+header{position:relative;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 22px}
+h1{font-family:Cinzel,serif;font-weight:800;letter-spacing:.06em;margin:0;font-size:clamp(22px,3.4vw,34px);
+  background:linear-gradient(180deg,#fff6d8,#ffc978);-webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 2px 6px rgba(0,0,0,.35))}
+h1 small{display:block;font-family:Nunito;font-weight:700;font-size:12px;letter-spacing:.2em;color:#e8dcff;-webkit-text-fill-color:#e8dcff;opacity:.8}
+.btns{display:flex;gap:8px}
+button{font:inherit;font-weight:800;cursor:pointer;border:0;border-radius:999px;padding:9px 16px;color:var(--ink);
+  background:linear-gradient(180deg,#fff3d6,#f2c97f);box-shadow:0 3px 0 #b07c33,0 6px 14px rgba(0,0,0,.25)}
+button.ghost{background:rgba(255,255,255,.14);color:#fff;box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.35)}
+button:active{transform:translateY(2px);box-shadow:0 1px 0 #b07c33}
+
+main{position:relative;z-index:1;display:grid;grid-template-columns:minmax(200px,260px) auto minmax(200px,260px);
+  grid-template-areas:"p1 board p0";justify-content:center;align-items:start;gap:22px;padding:0 18px 30px}
+#panel1{grid-area:p1} #panel0{grid-area:p0} #center{grid-area:board}
+@media (max-width:900px){
+  main{grid-template-columns:1fr 1fr;grid-template-areas:"board board" "p1 p0";gap:14px}
+  :root{--tile:min(16.5vw,92px)}
+}
+
+/* ---------- prompt ---------- */
+#prompt{min-height:52px;margin:0 auto 18px;max-width:520px;text-align:center;padding:10px 18px;border-radius:16px;
+  background:rgba(20,16,50,.45);backdrop-filter:blur(6px);box-shadow:inset 0 0 0 1px rgba(255,255,255,.15);font-weight:700}
+#prompt .who{font-weight:800}
+.sunT{color:var(--sun)} .moonT{color:var(--moon)} .magicT{color:var(--magic)}
+
+/* ---------- board ---------- */
+.board-wrap{position:relative;width:max-content;margin:0 auto;padding:34px 30px 0}
+.coords-x,.coords-y{position:absolute;display:flex;font-size:12px;font-weight:800;color:rgba(255,255,255,.55)}
+.coords-x{left:30px;right:30px;top:10px;justify-content:space-around}
+.coords-y{top:34px;left:6px;flex-direction:column;justify-content:space-around;height:calc(var(--tile)*5 + 40px)}
+.board{position:relative;z-index:2;display:grid;grid-template-columns:repeat(5,var(--tile));grid-auto-rows:var(--tile);gap:10px}
+.tile{position:relative;border-radius:14px;cursor:pointer;transition:transform .15s}
+.tile .face{position:absolute;inset:0;border-radius:14px;overflow:hidden}
+.tile.hp3 .face{background:radial-gradient(circle at 30% 25%,#a8ee7e 0,#6fcf5b 40%,#45a246 100%)}
+.tile.hp2 .face{background:radial-gradient(circle at 30% 25%,#cfe07a 0,#a6bf55 45%,#7c9440 100%)}
+.tile.hp1 .face{background:radial-gradient(circle at 30% 25%,#d6a979 0,#b07f52 45%,#80573a 100%)}
+.tile.hp3,.tile.hp2,.tile.hp1{box-shadow:0 11px 0 #6b4630,0 12px 0 #4b2f20,0 20px 18px rgba(20,10,40,.45)}
+.tile.hp1{animation:wobble 2.6s ease-in-out infinite}
+@keyframes wobble{0%,100%{transform:translateY(0)}50%{transform:translateY(2px) rotate(.4deg)}}
+.tile.hp0{cursor:default;box-shadow:inset 0 0 0 2px rgba(255,255,255,.10);background:rgba(10,8,30,.12)}
+.tile.hp0::after{content:"";position:absolute;inset:30%;border-radius:50%;background:radial-gradient(rgba(255,255,255,.12),transparent 70%)}
+.cracks{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.pips{position:absolute;bottom:6px;left:50%;transform:translateX(-50%);display:flex;gap:4px;z-index:3}
+.pip{width:7px;height:7px;border-radius:50%;background:rgba(0,0,0,.25)}
+.pip.on{background:#fff7d1;box-shadow:0 0 4px #fff3b0}
+.tile.hp1 .pip.on{background:#ffb08a;box-shadow:0 0 5px #ff7a4d}
+
+/* highlights */
+.tile.mv::before,.tile.tgt::before{content:"";position:absolute;inset:-4px;border-radius:17px;z-index:4;pointer-events:none;animation:pulse 1.1s ease-in-out infinite}
+.tile.mv.p0::before{box-shadow:0 0 0 3px var(--sun),0 0 18px var(--sun-glow)}
+.tile.mv.p1::before{box-shadow:0 0 0 3px var(--moon),0 0 18px var(--moon-glow)}
+.tile.tgt::before{box-shadow:0 0 0 3px var(--magic),0 0 20px rgba(201,155,255,.7)}
+.tile.mv.lethal::before{box-shadow:0 0 0 3px #ff5d5d,0 0 18px rgba(255,80,80,.6)}
+.tile.mv:hover,.tile.tgt:hover{transform:translateY(-3px)}
+.skull{position:absolute;top:5px;right:7px;font-size:14px;z-index:5;filter:drop-shadow(0 1px 1px #000)}
+@keyframes pulse{50%{opacity:.45}}
+
+/* units */
+.unit{position:absolute;inset:11%;border-radius:50%;z-index:6;display:flex;align-items:center;justify-content:center;
+  font-size:calc(var(--tile)*.42);transition:transform .18s;
+  background:radial-gradient(circle at 35% 30%,#fffdf5,#efe3ff 55%,#c7b6ea);}
+.unit.p0{box-shadow:0 0 0 4px var(--sun),0 0 0 6px var(--sun-d),0 8px 12px rgba(0,0,0,.4)}
+.unit.p1{box-shadow:0 0 0 4px var(--moon),0 0 0 6px var(--moon-d),0 8px 12px rgba(0,0,0,.4)}
+.unit.can{animation:breathe 1.6s ease-in-out infinite}
+@keyframes breathe{50%{transform:translateY(-3px)}}
+.unit.sel{transform:translateY(-8px) scale(1.07);animation:none}
+.unit.p0.sel{box-shadow:0 0 0 4px var(--sun),0 0 0 6px var(--sun-d),0 0 26px 6px var(--sun-glow),0 16px 14px rgba(0,0,0,.35)}
+.unit.p1.sel{box-shadow:0 0 0 4px var(--moon),0 0 0 6px var(--moon-d),0 0 26px 6px var(--moon-glow),0 16px 14px rgba(0,0,0,.35)}
+.unit.hop{animation:hop .42s cubic-bezier(.3,.7,.4,1)}
+@keyframes hop{0%{transform:translateY(0) scale(.9)}45%{transform:translateY(-26px) scale(1.1)}75%{transform:translateY(2px) scale(1.04,.94)}100%{transform:translateY(0)}}
+.badge{position:absolute;top:-8px;right:-10px;font-size:11px;font-weight:800;padding:2px 6px;border-radius:999px;background:var(--ink);color:#fff;box-shadow:0 0 0 2px rgba(255,255,255,.6)}
+.badge.ready{background:var(--magic);color:var(--ink)}
+.tree{position:absolute;inset:0;z-index:6;display:flex;align-items:center;justify-content:center;font-size:calc(var(--tile)*.62);filter:drop-shadow(0 6px 4px rgba(0,0,0,.35))}
+.tree.new{animation:sprout .5s cubic-bezier(.3,1.6,.5,1)}
+@keyframes sprout{from{transform:scale(0) translateY(20px)}}
+
+/* island underside */
+.underside{position:relative;z-index:1;margin:-6px auto 0;width:calc(var(--tile)*5 + 60px);height:calc(var(--tile)*1.9);
+  background:linear-gradient(180deg,#7a5134 0%,#5a3a29 40%,#3a2540 100%);
+  clip-path:polygon(0 0,100% 0,96% 18%,90% 30%,84% 52%,74% 60%,66% 82%,57% 88%,50% 100%,43% 86%,34% 78%,27% 58%,17% 50%,9% 30%,3% 16%);
+  opacity:.95}
+.underside::after{content:"";position:absolute;left:0;right:0;top:0;height:14px;background:linear-gradient(#3f8f3d,#5c3b28)}
+.rock{position:absolute;z-index:0;background:linear-gradient(#7a5134,#3a2540);border-radius:30% 30% 50% 50%;animation:bob 5s ease-in-out infinite}
+.rock::before{content:"";position:absolute;left:0;right:0;top:0;height:30%;border-radius:40% 40% 10% 10%;background:#5ab24f}
+@keyframes bob{50%{transform:translateY(-10px)}}
+
+/* fx */
+.fx{position:absolute;z-index:20;pointer-events:none}
+.fx.fall{display:flex;align-items:center;justify-content:center;border-radius:50%;animation:fall 1.1s ease-in forwards}
+@keyframes fall{0%{transform:translateY(0) rotate(0)}100%{transform:translateY(240px) rotate(160deg) scale(.25);opacity:0}}
+.fx.crumble{border-radius:14px;background:linear-gradient(#b07f52,#6b4630);animation:crumble 1s ease-in forwards}
+@keyframes crumble{0%{transform:none}20%{transform:translate(2px,3px) rotate(-3deg)}100%{transform:translateY(260px) rotate(-25deg) scale(.6);opacity:0}}
+.fx.dust{display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px;color:#ffe2c2;text-shadow:0 2px 3px #000;animation:float 0.9s ease-out forwards}
+.fx.heal{color:#b6ffb0}
+.fx.zap{color:var(--magic)}
+@keyframes float{from{transform:translateY(0);opacity:1}to{transform:translateY(-34px);opacity:0}}
+
+/* panels */
+.panel{background:rgba(20,16,50,.42);backdrop-filter:blur(8px);border-radius:20px;padding:14px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.14);transition:box-shadow .3s}
+.panel.active.p0{box-shadow:inset 0 0 0 2px var(--sun),0 0 30px var(--sun-glow)}
+.panel.active.p1{box-shadow:inset 0 0 0 2px var(--moon),0 0 30px var(--moon-glow)}
+.panel h2{font-family:Cinzel,serif;margin:0 0 10px;font-size:20px;display:flex;align-items:center;gap:8px}
+.panel h2 .turnTag{margin-left:auto;font-family:Nunito;font-size:11px;letter-spacing:.12em;padding:3px 8px;border-radius:999px;background:rgba(255,255,255,.18)}
+.cc{display:flex;gap:10px;padding:10px;border-radius:14px;background:rgba(255,255,255,.07);margin-bottom:8px}
+.cc.dead{opacity:.42;filter:grayscale(.8)}
+.cc .g{flex:none;width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;background:radial-gradient(circle at 35% 30%,#fffdf5,#efe3ff 55%,#c7b6ea)}
+.cc b{display:block;font-size:15px}
+.cc .ab{font-size:12.5px;line-height:1.35;color:#e9e2ff}
+.cc .ab i{font-style:normal;color:var(--magic);font-weight:800}
+.cc .st{font-size:11px;font-weight:800;letter-spacing:.06em;margin-top:4px;color:#ffd9a0}
+.empty{font-size:13px;opacity:.6;padding:8px 2px}
+
+/* log */
+#log{margin:26px auto 0;max-width:520px;max-height:150px;overflow:auto;font-size:13px;padding:10px 14px;border-radius:14px;background:rgba(20,16,50,.35);list-style:none}
+#log li{padding:2px 0;color:#eee6ff}
+#log li:first-child{font-weight:800;color:#fff}
+
+/* overlays */
+.overlay{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(15,10,40,.55);backdrop-filter:blur(3px)}
+.overlay.show{display:flex}
+.modal{background:linear-gradient(180deg,#2d2566,#1d1844);border-radius:24px;padding:24px 26px;max-width:860px;width:100%;box-shadow:0 0 0 1.5px rgba(255,255,255,.18),0 30px 60px rgba(0,0,0,.5);max-height:92vh;overflow:auto}
+.modal h3{font-family:Cinzel,serif;font-size:26px;margin:0 0 4px;text-align:center}
+.modal .sub{text-align:center;opacity:.85;margin-bottom:14px}
+.order{display:flex;justify-content:center;gap:8px;margin-bottom:18px;flex-wrap:wrap}
+.chip{padding:5px 12px;border-radius:999px;font-weight:800;font-size:13px;background:rgba(255,255,255,.1);opacity:.55}
+.chip.p0{color:var(--sun)} .chip.p1{color:var(--moon)}
+.chip.now{opacity:1;box-shadow:0 0 0 2px currentColor}
+.chip.done{opacity:.35;text-decoration:line-through}
+.pool{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
+.dcard{position:relative;border-radius:18px;padding:18px 14px;text-align:center;cursor:pointer;background:linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,.04));box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.18);transition:transform .15s,box-shadow .15s}
+.dcard:hover{transform:translateY(-4px)}
+.dcard.p0turn:hover{box-shadow:inset 0 0 0 2px var(--sun),0 0 24px var(--sun-glow)}
+.dcard.p1turn:hover{box-shadow:inset 0 0 0 2px var(--moon),0 0 24px var(--moon-glow)}
+.dcard .g{width:74px;height:74px;margin:0 auto 10px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:38px;background:radial-gradient(circle at 35% 30%,#fffdf5,#efe3ff 55%,#c7b6ea);box-shadow:0 6px 14px rgba(0,0,0,.35)}
+.dcard b{font-family:Cinzel,serif;font-size:19px}
+.dcard .ab{font-size:13.5px;margin-top:6px;color:#e9e2ff;line-height:1.4}
+.dcard .ab i{font-style:normal;color:var(--magic);font-weight:800;display:block;margin-bottom:2px}
+.dcard.taken{cursor:default;opacity:.45;transform:none}
+.dcard .owner{position:absolute;top:10px;right:10px;font-size:11px;font-weight:800;padding:3px 8px;border-radius:999px;background:rgba(0,0,0,.35)}
+.win h3{font-size:40px}
+.win .center{text-align:center;margin-top:16px}
+.rules{font-size:15px;line-height:1.55}
+.rules h4{font-family:Cinzel,serif;margin:16px 0 4px;font-size:17px;color:#ffd9a0}
+.rules ul{margin:4px 0;padding-left:20px}
+</style>
+</head>
+<body>
+<div class="sky" id="sky"></div>
+
+<header>
+  <h1>Skyfall Isle<small>A 1v1 FLOATING-ISLAND DUEL</small></h1>
+  <div class="btns">
+    <button class="ghost" id="rulesBtn">Rules</button>
+    <button id="newBtn">New Game</button>
+  </div>
+</header>
+
+<main>
+  <aside class="panel p1" id="panel1"></aside>
+  <section id="center">
+    <div id="prompt"></div>
+    <div class="board-wrap" id="wrap">
+      <div class="coords-x"><span>A</span><span>B</span><span>C</span><span>D</span><span>E</span></div>
+      <div class="coords-y"><span>5</span><span>4</span><span>3</span><span>2</span><span>1</span></div>
+      <div class="board" id="board"></div>
+      <div class="underside"></div>
+    </div>
+    <ul id="log"></ul>
+  </section>
+  <aside class="panel p0" id="panel0"></aside>
+</main>
+
+<div class="overlay" id="draftOv"><div class="modal" id="draftModal"></div></div>
+<div class="overlay" id="winOv"><div class="modal win" id="winModal"></div></div>
+<div class="overlay" id="rulesOv"><div class="modal rules">
+  <h3>How to Play</h3>
+  <h4>Draft</h4>
+  <ul>
+    <li>A coin toss decides who drafts first. Picks go <b>1 – 2 – 1</b>: first player takes one character, the second takes two, the first takes the last.</li>
+    <li>Sun starts on the bottom row (B1, D1), Moon on the top row (B5, D5). The player who drafted <b>second</b> takes the first turn.</li>
+  </ul>
+  <h4>Your turn</h4>
+  <ul>
+    <li>Pick one of your characters and jump it one square up, down, left or right.</li>
+    <li>You can't jump onto a broken square, another character, or a tree.</li>
+    <li>Every square starts with <b>3 HP</b>. Landing on a square deals it 1 damage. At 0 it breaks for good — and whoever is standing on it falls.</li>
+    <li>That means jumping onto a 1-HP square (marked ☠) sends your own character over the edge.</li>
+    <li>After the jump, the character's passive triggers.</li>
+  </ul>
+  <h4>Winning</h4>
+  <ul>
+    <li>You lose when all your characters have fallen, or when it's your turn and none of them can jump.</li>
+  </ul>
+  <h4>Characters</h4>
+  <div id="rulesChars"></div>
+  <div class="center" style="text-align:center;margin-top:18px"><button id="rulesClose">Got it</button></div>
+</div></div>
+
+<script>
+const N = 5;
+const CHARS = {
+  golem:  { name:'Golem',    glyph:'🪨', title:'Tremor',     text:'Whenever I jump, deal 1 damage to an adjacent square of your choice.' },
+  zephyr: { name:'Zephyr',   glyph:'🌪️', title:'Tailwind',   text:'Whenever I jump, I must immediately jump again. (The extra jump doesn’t trigger Tailwind.)' },
+  lumen:  { name:'Lumen',    glyph:'✨', title:'Mending',    text:'Every 2nd jump, heal an adjacent square by 1 (max 3). Can rebuild a broken square.' },
+  druid:  { name:'Thornwyn', glyph:'🦌', title:'Sproutcall', text:'Every 3rd jump, summon a tree on an adjacent empty square. Trees block movement.' },
+};
+const PLAYERS = [
+  { name:'Sun',  icon:'☀️', cls:'sunT'  },
+  { name:'Moon', icon:'🌙', cls:'moonT' },
+];
+const $ = id => document.getElementById(id);
+const boardEl = $('board'), wrapEl = $('wrap');
+let S;
+
+/* ---------- helpers ---------- */
+const xy  = i => [i % N, Math.floor(i / N)];
+const idx = (x, y) => y * N + x;
+const uIdx = u => idx(u.x, u.y);
+const coord = i => 'ABCDE'[i % N] + (N - Math.floor(i / N));
+const pname = p => `<span class="who ${PLAYERS[p].cls}">${PLAYERS[p].icon} ${PLAYERS[p].name}</span>`;
+const uname = u => `<span class="${PLAYERS[u.owner].cls}">${CHARS[u.type].name}</span>`;
+function adj(i){
+  const [x, y] = xy(i), out = [];
+  [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dx,dy]) => {
+    const nx = x+dx, ny = y+dy;
+    if (nx>=0 && ny>=0 && nx<N && ny<N) out.push(idx(nx,ny));
+  });
+  return out;
+}
+const unitAt = i => S.units.find(u => u.alive && uIdx(u) === i);
+const alive  = p => S.units.filter(u => u.alive && u.owner === p);
+const unit   = id => S.units.find(u => u.id === id);
+const legalMoves = u => adj(uIdx(u)).filter(j => S.tiles[j] > 0 && !unitAt(j) && !S.trees.has(j));
+function log(html){ S.log.unshift(html); if (S.log.length > 80) S.log.pop(); }
+
+/* ---------- game flow ---------- */
+function newGame(){
+  const first = Math.random() < .5 ? 0 : 1;
+  S = {
+    phase:'draft', first, order:[first, 1-first, 1-first, first], draftIdx:0,
+    pool:Object.keys(CHARS), picks:[[],[]],
+    tiles:Array(N*N).fill(3), trees:new Set(), units:[],
+    turn:null, sel:null, pending:null, log:[], winner:null, hop:null, newTree:null,
+  };
+  log(`${pname(first)} wins the coin toss and drafts first.`);
+  $('winOv').classList.remove('show');
+  render();
+}
+
+function draftPick(key){
+  if (S.phase !== 'draft' || !S.pool.includes(key)) return;
+  const p = S.order[S.draftIdx];
+  S.picks[p].push(key);
+  S.pool = S.pool.filter(k => k !== key);
+  log(`${pname(p)} drafts <b>${CHARS[key].name}</b>.`);
+  S.draftIdx++;
+  if (S.draftIdx >= S.order.length) { startPlay(); return; }
+  render();
+  if (S.pool.length === 1 && S.draftIdx === S.order.length - 1) {
+    setTimeout(() => draftPick(S.pool[0]), 900);
+  }
+}
+
+function startPlay(){
+  [0,1].forEach(p => S.picks[p].forEach((k, n) => {
+    S.units.push({ id:S.units.length, owner:p, type:k, x: n === 0 ? 1 : 3, y: p === 0 ? N-1 : 0, alive:true, jumps:0 });
+  }));
+  S.phase = 'play';
+  S.turn = 1 - S.first;
+  log(`The island awakens. ${pname(S.turn)} moves first.`);
+  startTurn();
+}
+
+function startTurn(){
+  S.sel = null; S.pending = null;
+  const mine = alive(S.turn);
+  if (!mine.some(u => legalMoves(u).length)) {
+    log(`${pname(S.turn)} has nowhere left to jump!`);
+    endGame(1 - S.turn);
+    return;
+  }
+  render();
+}
+
+function finish(){
+  S.sel = null; S.pending = null;
+  const a0 = alive(0).length, a1 = alive(1).length;
+  if (!a0 && !a1) return endGame(-1);
+  if (!a0) return endGame(1);
+  if (!a1) return endGame(0);
+  S.turn = 1 - S.turn;
+  startTurn();
+}
+
+function endGame(winner){
+  S.phase = 'over'; S.winner = winner;
+  log(winner < 0 ? `Both sides fell — it's a draw!` : `${pname(winner)} wins!`);
+  render();
+  const game = S;
+  setTimeout(() => { if (S === game) $('winOv').classList.add('show'); }, 900);
+}
+
+/* ---------- actions ---------- */
+function onTile(i){
+  if (S.phase !== 'play') return;
+  const pend = S.pending;
+  if (pend && pend.kind === 'target') { if (pend.targets.includes(i)) resolveTarget(i); return; }
+  if (pend && pend.kind === 'forced') {
+    const u = unit(pend.uid);
+    if (legalMoves(u).includes(i)) { S.pending = null; doJump(u, i, true); }
+    return;
+  }
+  const occ = unitAt(i);
+  if (occ && occ.owner === S.turn) {
+    S.sel = (S.sel === occ.id || !legalMoves(occ).length) ? null : occ.id;
+    render(); return;
+  }
+  if (S.sel != null) {
+    const u = unit(S.sel);
+    if (legalMoves(u).includes(i)) { S.sel = null; doJump(u, i, false); return; }
+  }
+  S.sel = null; render();
+}
+
+function doJump(u, i, isExtra){
+  const from = uIdx(u);
+  [u.x, u.y] = xy(i);
+  u.jumps++;
+  S.hop = { id:u.id, until:Date.now() + 450 };
+  log(`${uname(u)} jumps ${coord(from)} → ${coord(i)}${isExtra ? ' (Tailwind)' : ''}.`);
+  render();               // place the unit before fx read positions
+  damage(i);
+  if (!u.alive) { finish(); return; }
+  passive(u, isExtra);
+}
+
+function damage(i, src){
+  if (S.tiles[i] <= 0) return;
+  S.tiles[i]--;
+  if (src) fxText(i, '−1', 'zap');
+  if (S.tiles[i] === 0) {
+    fxCrumble(i);
+    log(`Square ${coord(i)} crumbles into the sky!`);
+    const occ = unitAt(i);
+    if (occ) { occ.alive = false; fxFall(i, CHARS[occ.type].glyph, occ.owner); log(`${uname(occ)} falls from the island! 💫`); }
+    if (S.trees.has(i)) { S.trees.delete(i); fxFall(i, '🌳', -1); log(`A tree on ${coord(i)} topples into the void.`); }
+  } else if (!src) fxText(i, '−1', '');
+}
+
+function passive(u, isExtra){
+  const here = uIdx(u);
+  const c = CHARS[u.type];
+  let targets = [];
+  switch (u.type) {
+    case 'golem':
+      targets = adj(here).filter(j => S.tiles[j] > 0);
+      break;
+    case 'zephyr':
+      if (isExtra) break;
+      if (legalMoves(u).length) { S.pending = { kind:'forced', uid:u.id }; log(`<span class="magicT">Tailwind!</span> ${uname(u)} must jump again.`); render(); return; }
+      log(`Tailwind fizzles — ${uname(u)} has nowhere to go.`);
+      break;
+    case 'lumen':
+      if (u.jumps % 2 !== 0) break;
+      targets = adj(here).filter(j => S.tiles[j] < 3);
+      if (!targets.length) log(`Mending fizzles — nothing nearby needs healing.`);
+      break;
+    case 'druid':
+      if (u.jumps % 3 !== 0) break;
+      targets = adj(here).filter(j => S.tiles[j] > 0 && !unitAt(j) && !S.trees.has(j));
+      if (!targets.length) log(`Sproutcall fizzles — no empty ground nearby.`);
+      break;
+  }
+  if (targets.length) { S.pending = { kind:'target', uid:u.id, ability:u.type, targets }; render(); return; }
+  finish();
+}
+
+function resolveTarget(i){
+  const pend = S.pending; S.pending = null;
+  const u = unit(pend.uid);
+  if (pend.ability === 'golem') {
+    log(`<span class="magicT">Tremor</span> strikes ${coord(i)}.`);
+    damage(i, 'tremor');
+  } else if (pend.ability === 'lumen') {
+    const wasBroken = S.tiles[i] === 0;
+    S.tiles[i] = Math.min(3, S.tiles[i] + 1);
+    log(`<span class="magicT">Mending</span> ${wasBroken ? 'rebuilds' : 'heals'} ${coord(i)}.`);
+    fxText(i, '+1', 'heal');
+  } else if (pend.ability === 'druid') {
+    S.trees.add(i); S.newTree = { i, until:Date.now() + 600 };
+    log(`<span class="magicT">Sproutcall</span> raises a tree on ${coord(i)}. 🌳`);
+  }
+  finish();
+}
+
+/* ---------- fx ---------- */
+function tileBox(i){
+  const t = boardEl.children[i], wr = wrapEl.getBoundingClientRect(), r = t.getBoundingClientRect();
+  return { left:r.left - wr.left, top:r.top - wr.top, w:r.width, h:r.height };
+}
+function addFx(i, cls, html, ms, style){
+  const b = tileBox(i), d = document.createElement('div');
+  d.className = 'fx ' + cls;
+  Object.assign(d.style, { left:b.left+'px', top:b.top+'px', width:b.w+'px', height:b.h+'px' }, style || {});
+  d.innerHTML = html || '';
+  wrapEl.appendChild(d);
+  setTimeout(() => d.remove(), ms);
+}
+const fxText    = (i, t, kind) => addFx(i, 'dust ' + kind, t, 950);
+const fxCrumble = i => addFx(i, 'crumble', '', 1050);
+function fxFall(i, glyph, owner){
+  const ring = owner === 0 ? 'box-shadow:0 0 0 4px var(--sun)' : owner === 1 ? 'box-shadow:0 0 0 4px var(--moon)' : '';
+  const bg = owner < 0 ? '' : 'background:radial-gradient(circle at 35% 30%,#fffdf5,#efe3ff 55%,#c7b6ea);';
+  addFx(i, 'fall', `<div style="width:78%;height:78%;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:calc(var(--tile)*.42);${bg}${ring}">${glyph}</div>`, 1150);
+}
+
+/* ---------- render ---------- */
+const CRACKS = {
+  2:'<path d="M18 30 L38 44 L34 58 L52 66" /><path d="M70 22 L62 36 L74 46"/>',
+  1:'<path d="M12 20 L34 40 L28 56 L48 70 L44 88"/><path d="M84 16 L70 34 L80 48 L64 62 L72 82"/><path d="M34 40 L56 36 L64 46"/><path d="M48 70 L66 64"/>',
+};
+function render(){
+  renderBoard(); renderPanels(); renderPrompt(); renderDraft(); renderWin();
+  $('log').innerHTML = S.log.map(l => `<li>${l}</li>`).join('');
+}
+
+function renderBoard(){
+  const now = Date.now();
+  const pend = S.pending;
+  let moveSet = [], moverOwner = S.turn, tgtSet = [];
+  if (S.phase === 'play') {
+    if (pend && pend.kind === 'forced') moveSet = legalMoves(unit(pend.uid));
+    else if (pend && pend.kind === 'target') tgtSet = pend.targets;
+    else if (S.sel != null) moveSet = legalMoves(unit(S.sel));
+  }
+  const activeId = pend ? pend.uid : S.sel;
+  let html = '';
+  for (let i = 0; i < N*N; i++) {
+    const hp = S.tiles[i];
+    const cls = ['tile', 'hp'+hp];
+    const isMv = moveSet.includes(i);
+    if (isMv) cls.push('mv', 'p'+moverOwner);
+    if (isMv && hp === 1) cls.push('lethal');
+    if (tgtSet.includes(i)) cls.push('tgt');
+    let inner = '';
+    if (hp > 0) {
+      inner += `<div class="face">${CRACKS[hp] ? `<svg class="cracks" viewBox="0 0 100 100" fill="none" stroke="rgba(40,22,10,.55)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">${CRACKS[hp]}</svg>` : ''}</div>`;
+      inner += `<div class="pips">${[0,1,2].map(k => `<span class="pip ${k < hp ? 'on' : ''}"></span>`).join('')}</div>`;
+    }
+    if (isMv && hp === 1) inner += `<span class="skull" title="Jumping here breaks the square">☠</span>`;
+    if (S.trees.has(i)) inner += `<div class="tree ${S.newTree && S.newTree.i === i && now < S.newTree.until ? 'new' : ''}">🌳</div>`;
+    const u = unitAt(i);
+    if (u) {
+      const uc = ['unit', 'p'+u.owner];
+      const canAct = S.phase === 'play' && !pend && u.owner === S.turn && legalMoves(u).length;
+      if (canAct && S.sel == null) uc.push('can');
+      if (u.id === activeId) uc.push('sel');
+      if (S.hop && S.hop.id === u.id && now < S.hop.until) uc.push('hop');
+      inner += `<div class="${uc.join(' ')}" title="${CHARS[u.type].name} — ${CHARS[u.type].title}: ${CHARS[u.type].text}">${CHARS[u.type].glyph}${badge(u)}</div>`;
+    }
+    html += `<div class="${cls.join(' ')}" data-i="${i}" title="${coord(i)} · ${hp ? hp + ' HP' : 'broken'}">${inner}</div>`;
+  }
+  boardEl.innerHTML = html;
+}
+
+function badge(u){
+  if (u.type === 'lumen') { const c = u.jumps % 2; return `<span class="badge ${c === 1 ? 'ready' : ''}">${c}/2</span>`; }
+  if (u.type === 'druid') { const c = u.jumps % 3; return `<span class="badge ${c === 2 ? 'ready' : ''}">${c}/3</span>`; }
+  return '';
+}
+
+function renderPanels(){
+  [0,1].forEach(p => {
+    const el = $('panel'+p);
+    const active = S.phase === 'play' && S.turn === p;
+    el.classList.toggle('active', active);
+    let h = `<h2>${PLAYERS[p].icon} <span class="${PLAYERS[p].cls}">${PLAYERS[p].name}</span>${active ? '<span class="turnTag">YOUR TURN</span>' : ''}</h2>`;
+    const list = S.phase === 'draft'
+      ? S.picks[p].map(k => ({ type:k, alive:true, jumps:0, draft:true }))
+      : S.units.filter(u => u.owner === p);
+    if (!list.length) h += `<div class="empty">No characters drafted yet.</div>`;
+    list.forEach(u => {
+      const c = CHARS[u.type];
+      let st = '';
+      if (!u.draft) {
+        if (!u.alive) st = 'FALLEN';
+        else {
+          st = `ON ${coord(uIdx(u))}`;
+          if (u.type === 'lumen') st += ` · ${u.jumps % 2 === 1 ? 'MENDING NEXT JUMP' : 'charging 0/2'}`;
+          if (u.type === 'druid') st += ` · ${u.jumps % 3 === 2 ? 'TREE NEXT JUMP' : 'charging ' + (u.jumps % 3) + '/3'}`;
+        }
+      }
+      h += `<div class="cc ${u.alive ? '' : 'dead'}"><div class="g">${c.glyph}</div><div><b>${c.name}</b><div class="ab"><i>${c.title}.</i> ${c.text}</div>${st ? `<div class="st">${st}</div>` : ''}</div></div>`;
+    });
+    el.innerHTML = h;
+  });
+}
+
+function renderPrompt(){
+  let t = '';
+  if (S.phase === 'draft') t = `${pname(S.order[S.draftIdx])} is drafting…`;
+  else if (S.phase === 'over') t = S.winner < 0 ? 'Draw!' : `${pname(S.winner)} rules the isle!`;
+  else {
+    const pend = S.pending;
+    if (pend && pend.kind === 'forced') t = `${pname(S.turn)} — <span class="magicT">Tailwind:</span> ${uname(unit(pend.uid))} must jump again.`;
+    else if (pend && pend.ability === 'golem') t = `${pname(S.turn)} — <span class="magicT">Tremor:</span> pick an adjacent square to damage.`;
+    else if (pend && pend.ability === 'lumen') t = `${pname(S.turn)} — <span class="magicT">Mending:</span> pick an adjacent square to heal.`;
+    else if (pend && pend.ability === 'druid') t = `${pname(S.turn)} — <span class="magicT">Sproutcall:</span> pick an empty adjacent square for the tree.`;
+    else if (S.sel != null) t = `${pname(S.turn)} — choose where ${uname(unit(S.sel))} jumps. <span style="opacity:.7">(☠ = breaks under you)</span>`;
+    else t = `${pname(S.turn)} — pick a character to jump.`;
+  }
+  $('prompt').innerHTML = t;
+}
+
+function renderDraft(){
+  const ov = $('draftOv');
+  ov.classList.toggle('show', S.phase === 'draft');
+  if (S.phase !== 'draft') return;
+  const p = S.order[S.draftIdx];
+  const owners = {};
+  [0,1].forEach(q => S.picks[q].forEach(k => owners[k] = q));
+  $('draftModal').innerHTML = `
+    <h3>The Draft</h3>
+    <div class="sub">${pname(S.first)} won the coin toss. ${pname(p)}, choose a champion.</div>
+    <div class="order">${S.order.map((q, n) => `<span class="chip p${q} ${n === S.draftIdx ? 'now' : n < S.draftIdx ? 'done' : ''}">${n+1}. ${PLAYERS[q].icon} ${PLAYERS[q].name}</span>`).join('')}</div>
+    <div class="pool">${Object.keys(CHARS).map(k => {
+      const c = CHARS[k], taken = k in owners;
+      return `<div class="dcard ${taken ? 'taken' : 'p'+p+'turn'}" data-k="${k}">
+        ${taken ? `<span class="owner ${PLAYERS[owners[k]].cls}">${PLAYERS[owners[k]].icon} ${PLAYERS[owners[k]].name}</span>` : ''}
+        <div class="g">${c.glyph}</div><b>${c.name}</b>
+        <div class="ab"><i>${c.title}</i>${c.text}</div></div>`;
+    }).join('')}</div>`;
+}
+
+function renderWin(){
+  if (S.phase !== 'over') return;
+  $('winModal').innerHTML = `
+    <h3>${S.winner < 0 ? 'A Draw!' : `${PLAYERS[S.winner].icon} <span class="${PLAYERS[S.winner].cls}">${PLAYERS[S.winner].name}</span> Wins`}</h3>
+    <div class="sub">${S.winner < 0 ? 'The island claimed everyone.' : 'The last one standing on the isle.'}</div>
+    <div class="center"><button id="againBtn">Play Again</button> <button class="ghost" id="viewBtn">View Board</button></div>`;
+  $('againBtn').onclick = newGame;
+  $('viewBtn').onclick = () => $('winOv').classList.remove('show');
+}
+
+/* ---------- wiring ---------- */
+boardEl.addEventListener('click', e => { const t = e.target.closest('.tile'); if (t) onTile(+t.dataset.i); });
+$('draftModal').addEventListener('click', e => { const c = e.target.closest('.dcard'); if (c && !c.classList.contains('taken')) draftPick(c.dataset.k); });
+$('newBtn').onclick = () => { if (S.phase === 'draft' || S.phase === 'over' || confirm('Start a new game?')) newGame(); };
+$('rulesBtn').onclick = () => $('rulesOv').classList.add('show');
+$('rulesClose').onclick = () => $('rulesOv').classList.remove('show');
+$('rulesOv').addEventListener('click', e => { if (e.target.id === 'rulesOv') $('rulesOv').classList.remove('show'); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && S.phase === 'play' && !S.pending) { S.sel = null; render(); } });
+$('rulesChars').innerHTML = Object.values(CHARS).map(c => `<div class="cc"><div class="g">${c.glyph}</div><div><b>${c.name}</b><div class="ab"><i>${c.title}.</i> ${c.text}</div></div></div>`).join('');
+
+/* sky decoration */
+(function sky(){
+  const sk = $('sky');
+  for (let i = 0; i < 60; i++) {
+    const s = document.createElement('div'); s.className = 'star';
+    Object.assign(s.style, { left:Math.random()*100+'%', top:Math.random()*45+'%', animationDelay:Math.random()*3+'s' });
+    sk.appendChild(s);
+  }
+  for (let i = 0; i < 6; i++) {
+    const c = document.createElement('div'); c.className = 'cloud';
+    const w = 120 + Math.random()*180;
+    Object.assign(c.style, { width:w+'px', top:(25 + Math.random()*65)+'%', animationDuration:(60 + Math.random()*60)+'s', animationDelay:(-Math.random()*90)+'s', opacity:.5 + Math.random()*.5 });
+    sk.appendChild(c);
+  }
+  [[4,72,46,40],[9,86,28,24],[92,64,52,44],[86,82,26,22],[50,93,34,28]].forEach(([left,top,w,h]) => {
+    const r = document.createElement('div'); r.className = 'rock';
+    Object.assign(r.style, { left:left+'%', top:top+'%', width:w+'px', height:h+'px', opacity:.75, animationDelay:Math.random()*4+'s' });
+    sk.appendChild(r);
+  });
+})();
+
+newGame();
+</script>
+</body>
+</html>
