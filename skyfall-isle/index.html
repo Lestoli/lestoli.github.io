@@ -645,9 +645,9 @@ function route(){
   } else { LOBBY = { view:'home' }; render(); }
 }
 
-function lobbyHTML(){
+function lobbyHTML(view){
   const name = esc(getName());
-  if (LOBBY.view === 'home') return `
+  if (view === 'home') return `
     <h3>Skyfall Isle</h3>
     <div class="sub">Draft two champions. Jump across a crumbling floating island. Last one standing wins.</div>
     <label class="lbl">Your name<input id="nameIn" maxlength="18" value="${name}" placeholder="e.g. Anthony"></label>
@@ -656,14 +656,14 @@ function lobbyHTML(){
       <button class="ghost" id="localBtn">Play on this device</button>
     </div>
     <div class="hint">Online: you'll get a link to send your friend. No accounts needed.</div>`;
-  if (LOBBY.view === 'join') return `
+  if (view === 'join') return `
     <h3>You've been challenged!</h3>
     <div class="sub">Room <b>${esc(LOBBY.code)}</b> — enter a name to take your seat.</div>
     <label class="lbl">Your name<input id="nameIn" maxlength="18" value="${name}" placeholder="e.g. Sam"></label>
     <div class="lobbyBtns"><button id="joinBtn">Join game</button><button class="ghost" id="homeBtn">Back</button></div>`;
-  if (LOBBY.view === 'connecting') return `<h3>Connecting</h3><div class="sub">${LOBBY.msg || ''}</div><div class="spinner"></div>`;
-  if (LOBBY.view === 'error') return `<h3>Hmm…</h3><div class="sub">${LOBBY.msg}</div><div class="lobbyBtns"><button id="homeBtn">Back to menu</button></div>`;
-  if (LOBBY.view === 'waiting') { const link = inviteLink(NET.room); return `
+  if (view === 'connecting') return `<h3>Connecting</h3><div class="sub">${LOBBY.msg || ''}</div><div class="spinner"></div>`;
+  if (view === 'error') return `<h3>Hmm…</h3><div class="sub">${LOBBY.msg}</div><div class="lobbyBtns"><button id="homeBtn">Back to menu</button></div>`;
+  if (view === 'waiting') { const link = inviteLink(NET.room); return `
     <h3>Room ${esc(NET.room)}</h3>
     <div class="sub">Send this link to your friend. The draft starts as soon as they join.</div>
     <div class="linkRow"><input id="linkIn" readonly value="${esc(link)}"><button id="copyBtn">Copy</button></div>
@@ -681,7 +681,7 @@ function renderLobby(){
   const key = view + '|' + (LOBBY.msg || '') + '|' + (NET.room || '');
   if (ov.dataset.view !== key) {          // only rebuild when the view changes (keeps typed text)
     ov.dataset.view = key;
-    const m = $('lobbyModal'); m.innerHTML = lobbyHTML();
+    const m = $('lobbyModal'); m.innerHTML = lobbyHTML(view);
     const on = (id, f) => { const el = $(id); if (el) el.onclick = f; };
     on('createBtn', createRoom);
     on('localBtn', () => { saveNameFrom('nameIn') || true; startLocal(); });
@@ -833,7 +833,7 @@ function renderPrompt(){
   const w = whoseInput();
   const online = NET.mode === 'online';
   const waitingOther = online && w >= 0 && NET.seat !== w;
-  if (S.phase === 'draft') t = waitingOther ? `Waiting for ${playerLabel(w)} to draft…` : `${pname(w)} is drafting…`;
+  if (S.phase === 'draft') t = waitingOther ? `Waiting for ${playerLabel(w)} to draft…` : online && NET.seat === w ? `Your pick — choose a champion.` : `${pname(w)} is drafting…`;
   else if (S.phase === 'over') t = S.winner < 0 ? 'Draw!' : `${playerLabel(S.winner)} rules the isle!`;
   else if (waitingOther) {
     const pend = S.pending;
