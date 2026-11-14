@@ -176,16 +176,44 @@ main{position:relative;z-index:1;display:grid;grid-template-columns:minmax(200px
 .rules{font-size:15px;line-height:1.55}
 .rules h4{font-family:Cinzel,serif;margin:16px 0 4px;font-size:17px;color:#ffd9a0}
 .rules ul{margin:4px 0;padding-left:20px}
+
+/* lobby / online */
+.lbl{display:block;font-weight:800;font-size:13px;letter-spacing:.06em;margin:6px auto 0;max-width:360px}
+.lbl input,.linkRow input{display:block;width:100%;margin-top:6px;font:inherit;font-size:17px;padding:11px 14px;border-radius:12px;border:0;outline:0;
+  background:rgba(255,255,255,.12);color:#fff;box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.25)}
+.lbl input:focus,.linkRow input:focus{box-shadow:inset 0 0 0 2px var(--sun)}
+.lbl input.bad{box-shadow:inset 0 0 0 2px #ff6b6b}
+.lobbyBtns{display:flex;flex-direction:column;gap:10px;max-width:360px;margin:18px auto 0}
+.lobbyBtns button{padding:13px 18px;font-size:16px}
+.hint{text-align:center;font-size:13px;opacity:.7;margin-top:12px}
+.linkRow{display:flex;gap:8px;max-width:460px;margin:8px auto 0;align-items:center}
+.linkRow input{margin:0;font-size:14px}
+.spinner{width:34px;height:34px;margin:18px auto 0;border-radius:50%;border:4px solid rgba(255,255,255,.2);border-top-color:var(--sun);animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#lobbyOv .modal{max-width:520px}
+.seat{font-size:13px;font-weight:700;margin:-4px 0 10px;display:flex;align-items:center;gap:6px}
+.seat i{font-style:normal;opacity:.7}
+.dot{width:8px;height:8px;border-radius:50%;flex:none}
+.dot.on{background:#7dff8a;box-shadow:0 0 6px #7dff8a}
+.dot.off{background:#888}
+.board.locked .tile{cursor:default}
+.dcard.locked{cursor:default}
+.dcard.locked:hover{transform:none}
+#roomTag{font-size:13px;font-weight:700;opacity:.85;display:flex;align-items:center;gap:8px}
+button.tiny{padding:4px 10px;font-size:12px}
 </style>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 </head>
 <body>
 <div class="sky" id="sky"></div>
 
 <header>
   <h1>Skyfall Isle<small>A 1v1 FLOATING-ISLAND DUEL</small></h1>
+  <div id="roomTag"></div>
   <div class="btns">
     <button class="ghost" id="rulesBtn">Rules</button>
-    <button id="newBtn">New Game</button>
+    <button id="menuBtn">Menu</button>
   </div>
 </header>
 
@@ -204,6 +232,7 @@ main{position:relative;z-index:1;display:grid;grid-template-columns:minmax(200px
   <aside class="panel p0" id="panel0"></aside>
 </main>
 
+<div class="overlay" id="lobbyOv"><div class="modal" id="lobbyModal"></div></div>
 <div class="overlay" id="draftOv"><div class="modal" id="draftModal"></div></div>
 <div class="overlay" id="winOv"><div class="modal win" id="winModal"></div></div>
 <div class="overlay" id="rulesOv"><div class="modal rules">
@@ -231,6 +260,18 @@ main{position:relative;z-index:1;display:grid;grid-template-columns:minmax(200px
 </div></div>
 
 <script>
+/* ================= CONFIG ================= */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBqP03YJ4yIg2I3VJL5aqgFl19b7yMJi7c",
+  authDomain: "ffxiv-diagram.firebaseapp.com",
+  databaseURL: "https://ffxiv-diagram-default-rtdb.firebaseio.com",
+  projectId: "ffxiv-diagram",
+  storageBucket: "ffxiv-diagram.firebasestorage.app",
+  messagingSenderId: "315795999535",
+  appId: "1:315795999535:web:f2b04f6bd6353e0459afda"
+};
+const ROOT = 'skyfall/rooms';
+
 const N = 5;
 const CHARS = {
   golem:  { name:'Golem',    glyph:'🪨', title:'Tremor',     text:'Whenever I jump, deal 1 damage to an adjacent square of your choice.' },
@@ -244,7 +285,21 @@ const PLAYERS = [
 ];
 const $ = id => document.getElementById(id);
 const boardEl = $('board'), wrapEl = $('wrap');
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let S;
+
+/* ---------- storage (wrapped: can be unavailable) ---------- */
+function ls(k, v){ try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch(e){ return null; } }
+function ss(k, v){ try { if (v === undefined) return sessionStorage.getItem(k); sessionStorage.setItem(k, v); } catch(e){ return null; } }
+// Per-tab player id: a refresh keeps your seat, a second tab is a different player.
+let myId = ss('skyfall.id');
+if (!myId) { myId = Math.random().toString(36).slice(2, 10) + Date.now().toString(36); ss('skyfall.id', myId); }
+const getName = () => (ls('skyfall.name') || '').trim();
+
+/* ---------- network / mode state ---------- */
+let NET = { mode:'none' };
+let LOBBY = { view:'home' };
+let db = null;
 
 /* ---------- helpers ---------- */
 const xy  = i => [i % N, Math.floor(i / N)];
@@ -266,10 +321,10 @@ const alive  = p => S.units.filter(u => u.alive && u.owner === p);
 const unit   = id => S.units.find(u => u.id === id);
 const legalMoves = u => adj(uIdx(u)).filter(j => S.tiles[j] > 0 && !unitAt(j) && !S.trees.has(j));
 function log(html){ S.log.unshift(html); if (S.log.length > 80) S.log.pop(); }
+const seatName = p => NET.mode === 'online' && NET.seats && NET.seats[p] ? NET.seats[p].name : '';
 
-/* ---------- game flow ---------- */
-function newGame(){
-  const first = Math.random() < .5 ? 0 : 1;
+/* ================= ENGINE (deterministic: same actions → same game) ================= */
+function newGame(first){
   S = {
     phase:'draft', first, order:[first, 1-first, 1-first, first], draftIdx:0,
     pool:Object.keys(CHARS), picks:[[],[]],
@@ -278,21 +333,16 @@ function newGame(){
   };
   log(`${pname(first)} wins the coin toss and drafts first.`);
   $('winOv').classList.remove('show');
-  render();
 }
 
 function draftPick(key){
-  if (S.phase !== 'draft' || !S.pool.includes(key)) return;
   const p = S.order[S.draftIdx];
   S.picks[p].push(key);
   S.pool = S.pool.filter(k => k !== key);
   log(`${pname(p)} drafts <b>${CHARS[key].name}</b>.`);
   S.draftIdx++;
-  if (S.draftIdx >= S.order.length) { startPlay(); return; }
-  render();
-  if (S.pool.length === 1 && S.draftIdx === S.order.length - 1) {
-    setTimeout(() => draftPick(S.pool[0]), 900);
-  }
+  if (S.pool.length === 1 && S.draftIdx === S.order.length - 1) { draftPick(S.pool[0]); return; }
+  if (S.draftIdx >= S.order.length) startPlay();
 }
 
 function startPlay(){
@@ -307,13 +357,10 @@ function startPlay(){
 
 function startTurn(){
   S.sel = null; S.pending = null;
-  const mine = alive(S.turn);
-  if (!mine.some(u => legalMoves(u).length)) {
+  if (!alive(S.turn).some(u => legalMoves(u).length)) {
     log(`${pname(S.turn)} has nowhere left to jump!`);
     endGame(1 - S.turn);
-    return;
   }
-  render();
 }
 
 function finish(){
@@ -329,31 +376,9 @@ function finish(){
 function endGame(winner){
   S.phase = 'over'; S.winner = winner;
   log(winner < 0 ? `Both sides fell — it's a draw!` : `${pname(winner)} wins!`);
-  render();
   const game = S;
-  setTimeout(() => { if (S === game) $('winOv').classList.add('show'); }, 900);
-}
-
-/* ---------- actions ---------- */
-function onTile(i){
-  if (S.phase !== 'play') return;
-  const pend = S.pending;
-  if (pend && pend.kind === 'target') { if (pend.targets.includes(i)) resolveTarget(i); return; }
-  if (pend && pend.kind === 'forced') {
-    const u = unit(pend.uid);
-    if (legalMoves(u).includes(i)) { S.pending = null; doJump(u, i, true); }
-    return;
-  }
-  const occ = unitAt(i);
-  if (occ && occ.owner === S.turn) {
-    S.sel = (S.sel === occ.id || !legalMoves(occ).length) ? null : occ.id;
-    render(); return;
-  }
-  if (S.sel != null) {
-    const u = unit(S.sel);
-    if (legalMoves(u).includes(i)) { S.sel = null; doJump(u, i, false); return; }
-  }
-  S.sel = null; render();
+  if (NET.quiet) $('winOv').classList.add('show');
+  else setTimeout(() => { if (S === game && S.phase === 'over') { renderWin(); $('winOv').classList.add('show'); } }, 900);
 }
 
 function doJump(u, i, isExtra){
@@ -362,7 +387,7 @@ function doJump(u, i, isExtra){
   u.jumps++;
   S.hop = { id:u.id, until:Date.now() + 450 };
   log(`${uname(u)} jumps ${coord(from)} → ${coord(i)}${isExtra ? ' (Tailwind)' : ''}.`);
-  render();               // place the unit before fx read positions
+  if (!NET.quiet) renderBoard();       // place the unit before fx read positions
   damage(i);
   if (!u.alive) { finish(); return; }
   passive(u, isExtra);
@@ -371,19 +396,18 @@ function doJump(u, i, isExtra){
 function damage(i, src){
   if (S.tiles[i] <= 0) return;
   S.tiles[i]--;
-  if (src) fxText(i, '−1', 'zap');
+  fxText(i, '−1', src ? 'zap' : '');
   if (S.tiles[i] === 0) {
     fxCrumble(i);
     log(`Square ${coord(i)} crumbles into the sky!`);
     const occ = unitAt(i);
     if (occ) { occ.alive = false; fxFall(i, CHARS[occ.type].glyph, occ.owner); log(`${uname(occ)} falls from the island! 💫`); }
     if (S.trees.has(i)) { S.trees.delete(i); fxFall(i, '🌳', -1); log(`A tree on ${coord(i)} topples into the void.`); }
-  } else if (!src) fxText(i, '−1', '');
+  }
 }
 
 function passive(u, isExtra){
   const here = uIdx(u);
-  const c = CHARS[u.type];
   let targets = [];
   switch (u.type) {
     case 'golem':
@@ -391,7 +415,7 @@ function passive(u, isExtra){
       break;
     case 'zephyr':
       if (isExtra) break;
-      if (legalMoves(u).length) { S.pending = { kind:'forced', uid:u.id }; log(`<span class="magicT">Tailwind!</span> ${uname(u)} must jump again.`); render(); return; }
+      if (legalMoves(u).length) { S.pending = { kind:'forced', uid:u.id }; log(`<span class="magicT">Tailwind!</span> ${uname(u)} must jump again.`); return; }
       log(`Tailwind fizzles — ${uname(u)} has nowhere to go.`);
       break;
     case 'lumen':
@@ -405,13 +429,12 @@ function passive(u, isExtra){
       if (!targets.length) log(`Sproutcall fizzles — no empty ground nearby.`);
       break;
   }
-  if (targets.length) { S.pending = { kind:'target', uid:u.id, ability:u.type, targets }; render(); return; }
+  if (targets.length) { S.pending = { kind:'target', uid:u.id, ability:u.type, targets }; return; }
   finish();
 }
 
 function resolveTarget(i){
   const pend = S.pending; S.pending = null;
-  const u = unit(pend.uid);
   if (pend.ability === 'golem') {
     log(`<span class="magicT">Tremor</span> strikes ${coord(i)}.`);
     damage(i, 'tremor');
@@ -427,15 +450,269 @@ function resolveTarget(i){
   finish();
 }
 
-/* ---------- fx ---------- */
+/* Apply one action. Invalid actions are ignored, so both players always agree. */
+function apply(a){
+  if (!a) return;
+  if (a.t === 'draft') {
+    if (S.phase === 'draft' && S.pool.includes(a.k)) draftPick(a.k);
+  } else if (a.t === 'jump') {
+    if (S.phase !== 'play') return;
+    const u = unit(a.u), p = S.pending;
+    if (!u || !u.alive || u.owner !== S.turn) return;
+    if (p && p.kind === 'target') return;
+    if (p && p.kind === 'forced' && p.uid !== u.id) return;
+    if (!legalMoves(u).includes(a.to)) return;
+    const forced = !!(p && p.kind === 'forced');
+    S.pending = null; S.sel = null;
+    doJump(u, a.to, forced);
+  } else if (a.t === 'target') {
+    const p = S.pending;
+    if (S.phase === 'play' && p && p.kind === 'target' && p.targets.includes(a.i)) resolveTarget(a.i);
+  }
+}
+
+/* ================= INPUT ================= */
+function whoseInput(){
+  if (!S) return -1;
+  if (S.phase === 'draft') return S.order[S.draftIdx];
+  if (S.phase === 'play') return S.turn;
+  return -1;
+}
+function myInput(){
+  if (NET.mode === 'local') return true;
+  if (NET.mode !== 'online' || NET.sending || NET.seat == null) return false;
+  if (!NET.seats || !NET.seats[0] || !NET.seats[1]) return false;
+  return NET.seat === whoseInput();
+}
+
+function act(a){
+  if (!myInput()) return;
+  if (NET.mode === 'local') { apply(a); render(); return; }
+  sendAction(a);
+}
+
+function onTile(i){
+  if (!S || S.phase !== 'play' || !myInput()) return;
+  const pend = S.pending;
+  if (pend && pend.kind === 'target') { if (pend.targets.includes(i)) act({ t:'target', i }); return; }
+  if (pend && pend.kind === 'forced') { if (legalMoves(unit(pend.uid)).includes(i)) act({ t:'jump', u:pend.uid, to:i }); return; }
+  const occ = unitAt(i);
+  if (occ && occ.owner === S.turn) {
+    S.sel = (S.sel === occ.id || !legalMoves(occ).length) ? null : occ.id;
+    render(); return;
+  }
+  if (S.sel != null && legalMoves(unit(S.sel)).includes(i)) {
+    const u = S.sel; S.sel = null;
+    act({ t:'jump', u, to:i }); return;
+  }
+  S.sel = null; render();
+}
+
+/* ================= ONLINE (Firebase Realtime Database) ================= */
+function fb(){
+  if (!db) {
+    if (typeof firebase === 'undefined') throw new Error('Could not load the online service. Check your connection.');
+    firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.database();
+  }
+  return db;
+}
+function roomCode(){
+  const A = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let c = ''; for (let k = 0; k < 5; k++) c += A[Math.floor(Math.random() * A.length)];
+  return c;
+}
+const inviteLink = c => location.origin + location.pathname + '#room=' + c;
+
+async function createRoom(){
+  const name = saveNameFrom('nameIn'); if (!name) return;
+  try {
+    fb();
+    LOBBY = { view:'connecting', msg:'Creating room…' }; render();
+    let c, ref;
+    for (let tries = 0; tries < 5; tries++) {
+      c = roomCode(); ref = db.ref(`${ROOT}/${c}`);
+      if (!(await ref.once('value')).exists()) break;
+    }
+    await ref.set({
+      created: firebase.database.ServerValue.TIMESTAMP,
+      seats: { 0: { id:myId, name, online:true } },
+      game: { n:1, first: Math.random() < .5 ? 0 : 1 },
+    });
+    location.hash = 'room=' + c;   // route() joins it
+  } catch (e) { LOBBY = { view:'error', msg:e.message || String(e) }; render(); }
+}
+
+async function joinRoom(c){
+  LOBBY = { view:'connecting', msg:`Joining room ${esc(c)}…` }; render();
+  try {
+    fb();
+    const ref = db.ref(`${ROOT}/${c}`);
+    const snap = await ref.once('value');
+    if (!snap.exists()) { LOBBY = { view:'error', msg:`Room <b>${esc(c)}</b> doesn't exist. Ask your friend for a fresh link.` }; render(); return; }
+    const seats = snap.val().seats || {};
+    let seat = null;
+    [0,1].forEach(s => { if (seats[s] && seats[s].id === myId) seat = s; });
+    if (seat === null && !seats[1]) {
+      const name = getName();
+      const r = await ref.child('seats/1').transaction(v => v ? undefined : { id:myId, name, online:true });
+      if (r.committed && r.snapshot.val() && r.snapshot.val().id === myId) seat = 1;
+    }
+    NET = { mode:'online', room:c, seat, ref, seats, gameN:null, applied:0, loaded:false, sending:false, quiet:false };
+    LOBBY = { view:null };
+    if (seat !== null) {
+      const sref = ref.child('seats/' + seat);
+      NET.connCb = db.ref('.info/connected').on('value', s => {
+        if (s.val() === true) { sref.child('online').onDisconnect().set(false); sref.update({ online:true, name:getName() || 'Player' }); }
+      });
+    }
+    ref.child('seats').on('value', s => { if (NET.ref !== ref) return; NET.seats = s.val() || {}; render(); });
+    ref.child('game').on('value', s => { if (NET.ref !== ref) return; onGame(s.val()); });
+  } catch (e) { LOBBY = { view:'error', msg:e.message || String(e) }; render(); }
+}
+
+function leaveRoom(){
+  if (NET.mode === 'online' && NET.ref) {
+    NET.ref.child('seats').off(); NET.ref.child('game').off();
+    if (NET.connCb) db.ref('.info/connected').off('value', NET.connCb);
+    if (NET.seat != null) NET.ref.child(`seats/${NET.seat}/online`).set(false);
+  }
+  NET = { mode:'none' };
+}
+
+function onGame(g){
+  if (!g) return;
+  if (g.n !== NET.gameN) {               // first load or a rematch
+    NET.gameN = g.n; NET.applied = 0;
+    newGame(g.first);
+  }
+  const acts = g.actions ? Object.keys(g.actions).map(Number).sort((a, b) => a - b).map(k => g.actions[k]) : [];
+  NET.quiet = !NET.loaded; NET.loaded = true;   // replay silently when (re)joining
+  while (NET.applied < acts.length) { apply(acts[NET.applied]); NET.applied++; }
+  NET.quiet = false; NET.sending = false;
+  render();
+}
+
+function sendAction(a){
+  NET.sending = true; render();
+  const n = NET.applied, gn = NET.gameN;
+  NET.ref.child('game').transaction(g => {
+    if (!g || g.n !== gn) return;                       // abort
+    const len = g.actions ? Object.keys(g.actions).length : 0;
+    if (len !== n) return;                              // someone else moved first
+    if (!g.actions) g.actions = {};
+    g.actions[n] = a;
+    return g;
+  }, (err, committed) => {
+    if (err || !committed) { NET.sending = false; render(); }
+  }, false);
+}
+
+function rematch(){
+  if (NET.mode === 'local') { newGame(Math.random() < .5 ? 0 : 1); render(); return; }
+  if (NET.mode !== 'online' || NET.seat == null) return;
+  const gn = NET.gameN;
+  NET.ref.child('game').transaction(g => (g && g.n === gn) ? { n:gn + 1, first: Math.random() < .5 ? 0 : 1 } : undefined);
+}
+
+/* ================= LOBBY / ROUTING ================= */
+function saveNameFrom(id){
+  const el = $(id); const name = (el ? el.value : '').trim().slice(0, 18);
+  if (!name) { if (el) { el.focus(); el.classList.add('bad'); } return ''; }
+  ls('skyfall.name', name); return name;
+}
+function startLocal(){
+  leaveRoom();
+  if (location.hash) history.replaceState(null, '', location.pathname);
+  NET = { mode:'local' }; LOBBY = { view:null };
+  newGame(Math.random() < .5 ? 0 : 1);
+  render();
+}
+function goHome(){
+  if (NET.mode === 'local' && S && S.phase === 'play' && !confirm('Leave this game?')) return;
+  leaveRoom();
+  history.pushState(null, '', location.pathname);
+  route();
+}
+function route(){
+  const m = location.hash.match(/room=([A-Za-z0-9]+)/);
+  if (NET.mode === 'online' && m && NET.room === m[1].toUpperCase()) return;
+  leaveRoom();
+  if (m) {
+    const c = m[1].toUpperCase();
+    if (!getName()) { LOBBY = { view:'join', code:c }; render(); }
+    else joinRoom(c);
+  } else { LOBBY = { view:'home' }; render(); }
+}
+
+function lobbyHTML(){
+  const name = esc(getName());
+  if (LOBBY.view === 'home') return `
+    <h3>Skyfall Isle</h3>
+    <div class="sub">Draft two champions. Jump across a crumbling floating island. Last one standing wins.</div>
+    <label class="lbl">Your name<input id="nameIn" maxlength="18" value="${name}" placeholder="e.g. Anthony"></label>
+    <div class="lobbyBtns">
+      <button id="createBtn">⚔️ Challenge a friend online</button>
+      <button class="ghost" id="localBtn">Play on this device</button>
+    </div>
+    <div class="hint">Online: you'll get a link to send your friend. No accounts needed.</div>`;
+  if (LOBBY.view === 'join') return `
+    <h3>You've been challenged!</h3>
+    <div class="sub">Room <b>${esc(LOBBY.code)}</b> — enter a name to take your seat.</div>
+    <label class="lbl">Your name<input id="nameIn" maxlength="18" value="${name}" placeholder="e.g. Sam"></label>
+    <div class="lobbyBtns"><button id="joinBtn">Join game</button><button class="ghost" id="homeBtn">Back</button></div>`;
+  if (LOBBY.view === 'connecting') return `<h3>Connecting</h3><div class="sub">${LOBBY.msg || ''}</div><div class="spinner"></div>`;
+  if (LOBBY.view === 'error') return `<h3>Hmm…</h3><div class="sub">${LOBBY.msg}</div><div class="lobbyBtns"><button id="homeBtn">Back to menu</button></div>`;
+  if (LOBBY.view === 'waiting') { const link = inviteLink(NET.room); return `
+    <h3>Room ${esc(NET.room)}</h3>
+    <div class="sub">Send this link to your friend. The draft starts as soon as they join.</div>
+    <div class="linkRow"><input id="linkIn" readonly value="${esc(link)}"><button id="copyBtn">Copy</button></div>
+    <div class="spinner"></div><div class="hint">Waiting for an opponent…</div>
+    <div class="lobbyBtns"><button class="ghost" id="homeBtn">Cancel</button></div>`; }
+  return '';
+}
+
+function renderLobby(){
+  let view = LOBBY.view;
+  if (!view && NET.mode === 'online' && NET.seat === 0 && !(NET.seats && NET.seats[1])) view = 'waiting';
+  const ov = $('lobbyOv');
+  ov.classList.toggle('show', !!view);
+  if (!view) { ov.dataset.view = ''; return false; }
+  const key = view + '|' + (LOBBY.msg || '') + '|' + (NET.room || '');
+  if (ov.dataset.view !== key) {          // only rebuild when the view changes (keeps typed text)
+    ov.dataset.view = key;
+    const m = $('lobbyModal'); m.innerHTML = lobbyHTML();
+    const on = (id, f) => { const el = $(id); if (el) el.onclick = f; };
+    on('createBtn', createRoom);
+    on('localBtn', () => { saveNameFrom('nameIn') || true; startLocal(); });
+    on('joinBtn', () => { if (saveNameFrom('nameIn')) joinRoom(LOBBY.code); });
+    on('homeBtn', goHome);
+    on('copyBtn', () => {
+      const inp = $('linkIn'); inp.select();
+      const done = () => { $('copyBtn').textContent = 'Copied!'; setTimeout(() => { const b = $('copyBtn'); if (b) b.textContent = 'Copy'; }, 1500); };
+      if (navigator.clipboard) navigator.clipboard.writeText(inp.value).then(done, () => { document.execCommand('copy'); done(); });
+      else { document.execCommand('copy'); done(); }
+    });
+    const ni = $('nameIn');
+    if (ni) {
+      ni.oninput = () => ni.classList.remove('bad');
+      ni.onkeydown = e => { if (e.key === 'Enter') ($('joinBtn') || $('createBtn')).click(); };
+      setTimeout(() => ni.focus(), 50);
+    }
+  }
+  return true;
+}
+
+/* ================= FX ================= */
 function tileBox(i){
   const t = boardEl.children[i], wr = wrapEl.getBoundingClientRect(), r = t.getBoundingClientRect();
   return { left:r.left - wr.left, top:r.top - wr.top, w:r.width, h:r.height };
 }
-function addFx(i, cls, html, ms, style){
+function addFx(i, cls, html, ms){
+  if (NET.quiet || !boardEl.children[i]) return;
   const b = tileBox(i), d = document.createElement('div');
   d.className = 'fx ' + cls;
-  Object.assign(d.style, { left:b.left+'px', top:b.top+'px', width:b.w+'px', height:b.h+'px' }, style || {});
+  Object.assign(d.style, { left:b.left+'px', top:b.top+'px', width:b.w+'px', height:b.h+'px' });
   d.innerHTML = html || '';
   wrapEl.appendChild(d);
   setTimeout(() => d.remove(), ms);
@@ -448,32 +725,40 @@ function fxFall(i, glyph, owner){
   addFx(i, 'fall', `<div style="width:78%;height:78%;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:calc(var(--tile)*.42);${bg}${ring}">${glyph}</div>`, 1150);
 }
 
-/* ---------- render ---------- */
+/* ================= RENDER ================= */
 const CRACKS = {
   2:'<path d="M18 30 L38 44 L34 58 L52 66" /><path d="M70 22 L62 36 L74 46"/>',
   1:'<path d="M12 20 L34 40 L28 56 L48 70 L44 88"/><path d="M84 16 L70 34 L80 48 L64 62 L72 82"/><path d="M34 40 L56 36 L64 46"/><path d="M48 70 L66 64"/>',
 };
 function render(){
-  renderBoard(); renderPanels(); renderPrompt(); renderDraft(); renderWin();
+  const lobby = renderLobby();
+  if (!S) { boardEl.innerHTML = ''; $('draftOv').classList.remove('show'); return; }
+  renderBoard(); renderPanels(); renderPrompt(); renderDraft(lobby); renderWin();
   $('log').innerHTML = S.log.map(l => `<li>${l}</li>`).join('');
+  $('roomTag').innerHTML = NET.mode === 'online'
+    ? `Room <b>${esc(NET.room)}</b>${NET.seat == null ? ' · spectating' : ''} <button class="ghost tiny" id="shareBtn">Copy link</button>` : (NET.mode === 'local' ? 'Pass &amp; play' : '');
+  const sb = $('shareBtn');
+  if (sb) sb.onclick = () => { navigator.clipboard && navigator.clipboard.writeText(inviteLink(NET.room)); sb.textContent = 'Copied!'; };
 }
 
 function renderBoard(){
   const now = Date.now();
   const pend = S.pending;
-  let moveSet = [], moverOwner = S.turn, tgtSet = [];
+  const mine = myInput();
+  let moveSet = [], tgtSet = [];
   if (S.phase === 'play') {
     if (pend && pend.kind === 'forced') moveSet = legalMoves(unit(pend.uid));
     else if (pend && pend.kind === 'target') tgtSet = pend.targets;
     else if (S.sel != null) moveSet = legalMoves(unit(S.sel));
   }
   const activeId = pend ? pend.uid : S.sel;
+  boardEl.classList.toggle('locked', !mine);
   let html = '';
   for (let i = 0; i < N*N; i++) {
     const hp = S.tiles[i];
     const cls = ['tile', 'hp'+hp];
     const isMv = moveSet.includes(i);
-    if (isMv) cls.push('mv', 'p'+moverOwner);
+    if (isMv) cls.push('mv', 'p'+S.turn);
     if (isMv && hp === 1) cls.push('lethal');
     if (tgtSet.includes(i)) cls.push('tgt');
     let inner = '';
@@ -486,7 +771,7 @@ function renderBoard(){
     const u = unitAt(i);
     if (u) {
       const uc = ['unit', 'p'+u.owner];
-      const canAct = S.phase === 'play' && !pend && u.owner === S.turn && legalMoves(u).length;
+      const canAct = mine && S.phase === 'play' && !pend && u.owner === S.turn && legalMoves(u).length;
       if (canAct && S.sel == null) uc.push('can');
       if (u.id === activeId) uc.push('sel');
       if (S.hop && S.hop.id === u.id && now < S.hop.until) uc.push('hop');
@@ -508,7 +793,15 @@ function renderPanels(){
     const el = $('panel'+p);
     const active = S.phase === 'play' && S.turn === p;
     el.classList.toggle('active', active);
-    let h = `<h2>${PLAYERS[p].icon} <span class="${PLAYERS[p].cls}">${PLAYERS[p].name}</span>${active ? '<span class="turnTag">YOUR TURN</span>' : ''}</h2>`;
+    let tag = '';
+    if (active) tag = NET.mode === 'online' ? (NET.seat === p ? 'YOUR TURN' : 'THEIR TURN') : 'TURN';
+    let h = `<h2>${PLAYERS[p].icon} <span class="${PLAYERS[p].cls}">${PLAYERS[p].name}</span>${tag ? `<span class="turnTag">${tag}</span>` : ''}</h2>`;
+    if (NET.mode === 'online') {
+      const st = NET.seats && NET.seats[p];
+      h += st
+        ? `<div class="seat"><span class="dot ${st.online === false ? 'off' : 'on'}"></span>${esc(st.name || 'Player')}${NET.seat === p ? ' <i>(you)</i>' : ''}${st.online === false ? ' <i>· disconnected</i>' : ''}</div>`
+        : `<div class="seat"><span class="dot off"></span><i>waiting for player…</i></div>`;
+    }
     const list = S.phase === 'draft'
       ? S.picks[p].map(k => ({ type:k, alive:true, jumps:0, draft:true }))
       : S.units.filter(u => u.owner === p);
@@ -530,36 +823,57 @@ function renderPanels(){
   });
 }
 
+function playerLabel(p){
+  const n = seatName(p);
+  return pname(p) + (n ? ` <span style="opacity:.8">(${esc(n)})</span>` : '');
+}
+
 function renderPrompt(){
   let t = '';
-  if (S.phase === 'draft') t = `${pname(S.order[S.draftIdx])} is drafting…`;
-  else if (S.phase === 'over') t = S.winner < 0 ? 'Draw!' : `${pname(S.winner)} rules the isle!`;
+  const w = whoseInput();
+  const online = NET.mode === 'online';
+  const waitingOther = online && w >= 0 && NET.seat !== w;
+  if (S.phase === 'draft') t = waitingOther ? `Waiting for ${playerLabel(w)} to draft…` : `${pname(w)} is drafting…`;
+  else if (S.phase === 'over') t = S.winner < 0 ? 'Draw!' : `${playerLabel(S.winner)} rules the isle!`;
+  else if (waitingOther) {
+    const pend = S.pending;
+    const off = NET.seats && NET.seats[w] && NET.seats[w].online === false;
+    t = `Waiting for ${playerLabel(w)}${pend ? ' to finish their move' : ''}…${off ? ' <span style="color:#ff9d9d">(disconnected)</span>' : ''}`;
+  } else if (online && NET.sending) t = 'Sending…';
   else {
     const pend = S.pending;
-    if (pend && pend.kind === 'forced') t = `${pname(S.turn)} — <span class="magicT">Tailwind:</span> ${uname(unit(pend.uid))} must jump again.`;
-    else if (pend && pend.ability === 'golem') t = `${pname(S.turn)} — <span class="magicT">Tremor:</span> pick an adjacent square to damage.`;
-    else if (pend && pend.ability === 'lumen') t = `${pname(S.turn)} — <span class="magicT">Mending:</span> pick an adjacent square to heal.`;
-    else if (pend && pend.ability === 'druid') t = `${pname(S.turn)} — <span class="magicT">Sproutcall:</span> pick an empty adjacent square for the tree.`;
-    else if (S.sel != null) t = `${pname(S.turn)} — choose where ${uname(unit(S.sel))} jumps. <span style="opacity:.7">(☠ = breaks under you)</span>`;
-    else t = `${pname(S.turn)} — pick a character to jump.`;
+    const who = online ? 'Your turn' : pname(S.turn);
+    if (pend && pend.kind === 'forced') t = `${who} — <span class="magicT">Tailwind:</span> ${uname(unit(pend.uid))} must jump again.`;
+    else if (pend && pend.ability === 'golem') t = `${who} — <span class="magicT">Tremor:</span> pick an adjacent square to damage.`;
+    else if (pend && pend.ability === 'lumen') t = `${who} — <span class="magicT">Mending:</span> pick an adjacent square to heal.`;
+    else if (pend && pend.ability === 'druid') t = `${who} — <span class="magicT">Sproutcall:</span> pick an empty adjacent square for the tree.`;
+    else if (S.sel != null) t = `${who} — choose where ${uname(unit(S.sel))} jumps. <span style="opacity:.7">(☠ = breaks under you)</span>`;
+    else t = `${who} — pick a character to jump.`;
   }
   $('prompt').innerHTML = t;
 }
 
-function renderDraft(){
+function renderDraft(lobbyShown){
   const ov = $('draftOv');
-  ov.classList.toggle('show', S.phase === 'draft');
-  if (S.phase !== 'draft') return;
+  const show = S.phase === 'draft' && !lobbyShown;
+  ov.classList.toggle('show', show);
+  if (!show) return;
   const p = S.order[S.draftIdx];
+  const mine = myInput();
   const owners = {};
   [0,1].forEach(q => S.picks[q].forEach(k => owners[k] = q));
+  let sub;
+  if (NET.mode !== 'online') sub = `${pname(S.first)} won the coin toss. ${pname(p)}, choose a champion.`;
+  else if (mine) sub = `${pname(S.first)} won the coin toss. <b>Your pick</b> — choose a champion.`;
+  else sub = `${pname(S.first)} won the coin toss. Waiting for ${playerLabel(p)} to pick…`;
+  if (NET.mode === 'online' && NET.seat != null && S.draftIdx === 0) sub += `<br><span style="opacity:.75">You are ${pname(NET.seat)}.</span>`;
   $('draftModal').innerHTML = `
     <h3>The Draft</h3>
-    <div class="sub">${pname(S.first)} won the coin toss. ${pname(p)}, choose a champion.</div>
+    <div class="sub">${sub}</div>
     <div class="order">${S.order.map((q, n) => `<span class="chip p${q} ${n === S.draftIdx ? 'now' : n < S.draftIdx ? 'done' : ''}">${n+1}. ${PLAYERS[q].icon} ${PLAYERS[q].name}</span>`).join('')}</div>
     <div class="pool">${Object.keys(CHARS).map(k => {
       const c = CHARS[k], taken = k in owners;
-      return `<div class="dcard ${taken ? 'taken' : 'p'+p+'turn'}" data-k="${k}">
+      return `<div class="dcard ${taken ? 'taken' : mine ? 'p'+p+'turn' : 'locked'}" data-k="${k}">
         ${taken ? `<span class="owner ${PLAYERS[owners[k]].cls}">${PLAYERS[owners[k]].icon} ${PLAYERS[owners[k]].name}</span>` : ''}
         <div class="g">${c.glyph}</div><b>${c.name}</b>
         <div class="ab"><i>${c.title}</i>${c.text}</div></div>`;
@@ -568,23 +882,33 @@ function renderDraft(){
 
 function renderWin(){
   if (S.phase !== 'over') return;
-  $('winModal').innerHTML = `
-    <h3>${S.winner < 0 ? 'A Draw!' : `${PLAYERS[S.winner].icon} <span class="${PLAYERS[S.winner].cls}">${PLAYERS[S.winner].name}</span> Wins`}</h3>
-    <div class="sub">${S.winner < 0 ? 'The island claimed everyone.' : 'The last one standing on the isle.'}</div>
-    <div class="center"><button id="againBtn">Play Again</button> <button class="ghost" id="viewBtn">View Board</button></div>`;
-  $('againBtn').onclick = newGame;
+  let title, sub;
+  if (S.winner < 0) { title = 'A Draw!'; sub = 'The island claimed everyone.'; }
+  else {
+    title = `${PLAYERS[S.winner].icon} <span class="${PLAYERS[S.winner].cls}">${esc(seatName(S.winner) || PLAYERS[S.winner].name)}</span> Wins`;
+    sub = NET.mode === 'online' && NET.seat != null ? (NET.seat === S.winner ? 'Victory! You are the last one standing.' : 'You fell from the isle. Rematch?') : 'The last one standing on the isle.';
+  }
+  const canRematch = NET.mode === 'local' || (NET.mode === 'online' && NET.seat != null);
+  $('winModal').innerHTML = `<h3>${title}</h3><div class="sub">${sub}</div>
+    <div class="center">${canRematch ? '<button id="againBtn">Rematch</button> ' : ''}<button class="ghost" id="viewBtn">View Board</button></div>`;
+  if ($('againBtn')) $('againBtn').onclick = rematch;
   $('viewBtn').onclick = () => $('winOv').classList.remove('show');
 }
 
-/* ---------- wiring ---------- */
+/* ================= WIRING ================= */
 boardEl.addEventListener('click', e => { const t = e.target.closest('.tile'); if (t) onTile(+t.dataset.i); });
-$('draftModal').addEventListener('click', e => { const c = e.target.closest('.dcard'); if (c && !c.classList.contains('taken')) draftPick(c.dataset.k); });
-$('newBtn').onclick = () => { if (S.phase === 'draft' || S.phase === 'over' || confirm('Start a new game?')) newGame(); };
+$('draftModal').addEventListener('click', e => {
+  const c = e.target.closest('.dcard');
+  if (c && !c.classList.contains('taken') && S.phase === 'draft') act({ t:'draft', k:c.dataset.k });
+});
+$('menuBtn').onclick = goHome;
 $('rulesBtn').onclick = () => $('rulesOv').classList.add('show');
 $('rulesClose').onclick = () => $('rulesOv').classList.remove('show');
 $('rulesOv').addEventListener('click', e => { if (e.target.id === 'rulesOv') $('rulesOv').classList.remove('show'); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && S.phase === 'play' && !S.pending) { S.sel = null; render(); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && S && S.phase === 'play' && !S.pending && S.sel != null) { S.sel = null; render(); } });
 $('rulesChars').innerHTML = Object.values(CHARS).map(c => `<div class="cc"><div class="g">${c.glyph}</div><div><b>${c.name}</b><div class="ab"><i>${c.title}.</i> ${c.text}</div></div></div>`).join('');
+window.addEventListener('hashchange', route);
+window.addEventListener('popstate', route);
 
 /* sky decoration */
 (function sky(){
@@ -607,7 +931,9 @@ $('rulesChars').innerHTML = Object.values(CHARS).map(c => `<div class="cc"><div 
   });
 })();
 
-newGame();
+newGame(0);     // backdrop board behind the menu
+route();
 </script>
+
 </body>
 </html>
